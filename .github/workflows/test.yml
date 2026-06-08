@@ -23,3 +23,6 @@ jobs:
         
       - name: Run PnL tests
         run: node tests/pnl.test.js
+
+      - name: Run R:R tests
+        run: node tests/rr.test.js
