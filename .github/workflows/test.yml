@@ -20,3 +20,6 @@ jobs:
 
       - name: Run fee tests
         run: node tests/fees.test.js
+        
+      - name: Run PnL tests
+        run: node tests/pnl.test.js
