@@ -29,3 +29,6 @@ jobs:
 
       - name: Run risk tests
         run: node tests/risk.test.js
+
+      - name: Run money tests
+        run: node tests/money.test.js
