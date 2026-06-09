@@ -26,3 +26,6 @@ jobs:
 
       - name: Run R:R tests
         run: node tests/rr.test.js
+
+      - name: Run risk tests
+        run: node tests/risk.test.js
