@@ -32,3 +32,6 @@ jobs:
 
       - name: Run money tests
         run: node tests/money.test.js
+
+      - name: Run break-even tests
+        run: node tests/breakeven.test.js
