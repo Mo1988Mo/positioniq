@@ -4,6 +4,7 @@ import { calcRawPnl, calcRoi, calcClosingPnl, calcPositionPnl } from "./logic/pn
 import { calcTradingFees, calcFunding } from "./logic/fees.js";
 import { calcRR, deriveTpFromSl, deriveSlFromTp } from "./logic/rr.js";
 import { solveRisk } from "./logic/risk.js";
+import { calcTargetClose } from "./logic/money.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -70,6 +71,12 @@ export default function App() {
   const [rsMargin, setRsMargin] = useState("");
   const [rsNotional, setRsNotional] = useState("");
 
+  // Money management state
+  const [mmEntry, setMmEntry] = useState("");
+  const [mmNotional, setMmNotional] = useState("");
+  const [mmMargin, setMmMargin] = useState("");
+  const [mmTargetRoi, setMmTargetRoi] = useState("");
+
   const livePreview = (() => {
     const e = parseFloat(entry);
     const s = parseFloat(sl);
@@ -98,14 +105,27 @@ export default function App() {
   };
 
   const solved = solveRisk({
-    side,
-    entry: rsEntry,
-    sl: rsSl,
-    riskPct: rsRiskPct,
-    leverage: rsLeverage,
-    margin: rsMargin,
-    notional: rsNotional,
+    side, entry: rsEntry, sl: rsSl, riskPct: rsRiskPct,
+    leverage: rsLeverage, margin: rsMargin, notional: rsNotional,
   });
+
+  const resetSolver = () => {
+    setRsEntry(""); setRsSl(""); setRsRiskPct("");
+    setRsLeverage(""); setRsMargin(""); setRsNotional("");
+  };
+
+  // Money management result
+  const mmResult = calcTargetClose({
+    side,
+    entry: parseFloat(mmEntry),
+    notional: parseFloat(mmNotional),
+    margin: parseFloat(mmMargin),
+    targetRoi: parseFloat(mmTargetRoi),
+  });
+
+  const resetMoney = () => {
+    setMmEntry(""); setMmNotional(""); setMmMargin(""); setMmTargetRoi("");
+  };
 
   const onMargin = (v) => {
     setMargin(v);
@@ -298,6 +318,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* RISK SOLVER */}
         <div className="panel output-panel">
           <div className="panel-title">Risk Management Solver</div>
           <div className="panel-body">
@@ -322,9 +343,51 @@ export default function App() {
                 {solved.qty != null && <> · Position qty: {fmt(solved.qty, 4)}</>}
               </div>
             )}
+            <button className="btn btn-reset" onClick={resetSolver} style={{ marginTop: 10 }}>↺ Reset Solver</button>
           </div>
         </div>
 
+        {/* MONEY MANAGEMENT */}
+        <div className="panel output-panel">
+          <div className="panel-title">Money Management — Target Close</div>
+          <div className="panel-body">
+            <p style={{ fontSize: 10, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+              Enter your entry, position size, and a target ROI% (negative for a loss target) to find the gross close price needed. (Uses the {side.toUpperCase()} side selected above. Price move only — fees excluded.)
+            </p>
+            <div className="field-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+              <div className="field">
+                <label>Entry Price</label>
+                <input type="number" placeholder="0.00" value={mmEntry} onChange={(e) => setMmEntry(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Notional (USDT)</label>
+                <input type="number" placeholder="0.00" value={mmNotional} onChange={(e) => setMmNotional(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Margin (USDT)</label>
+                <input type="number" placeholder="0.00" value={mmMargin} onChange={(e) => setMmMargin(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Target ROI %</label>
+                <input type="number" placeholder="e.g. 50 or -30" value={mmTargetRoi} onChange={(e) => setMmTargetRoi(e.target.value)} />
+              </div>
+            </div>
+            {mmResult && (
+              <div style={{
+                marginTop: 12, padding: "10px 12px",
+                background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)",
+                borderRadius: 3, fontSize: 12, color: "var(--accent)", letterSpacing: "0.5px", textAlign: "center"
+              }}>
+                Target close price: <strong>{fmt(mmResult.closePrice, 2)}</strong>
+                {"  ·  "}target PnL: {sign(mmResult.targetPnl)}${fmt(mmResult.targetPnl, 2)}
+                {"  ·  "}move: {sign(mmResult.priceMove)}{fmt((mmResult.priceMove / parseFloat(mmEntry)) * 100, 2)}%
+              </div>
+            )}
+            <button className="btn btn-reset" onClick={resetMoney} style={{ marginTop: 10 }}>↺ Reset</button>
+          </div>
+        </div>
+
+        {/* OUTPUT */}
         <div className="panel output-panel">
           <div className="panel-title">Position Analysis</div>
           <div className="panel-body">
