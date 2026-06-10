@@ -2,7 +2,7 @@ import { useState } from "react";
 import { t } from "./i18n/index.js";
 import { calcRawPnl, calcRoi, calcClosingPnl, calcPositionPnl } from "./logic/pnl.js";
 import { calcTradingFees, calcFunding } from "./logic/fees.js";
-import { calcRR } from "./logic/rr.js";
+import { calcRR, deriveTpFromSl, deriveSlFromTp } from "./logic/rr.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -21,6 +21,7 @@ export default function App() {
   const [notional, setNotional] = useState("");
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
+  const [rrMult, setRrMult] = useState("");
   const [makerFee, setMakerFee] = useState("0.02");
   const [takerFee, setTakerFee] = useState("0.05");
   const [entryTaker, setEntryTaker] = useState(true);
@@ -30,7 +31,7 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
-  // Live R:R preview (Mode 1) — updates as you type, no button needed
+  // Live R:R preview (Mode 1) — both SL & TP set → show ratio
   const livePreview = (() => {
     const e = parseFloat(entry);
     const s = parseFloat(sl);
@@ -40,7 +41,33 @@ export default function App() {
     return { rr };
   })();
 
-  // Auto-sync margin → notional
+  // Mode 2 — Standalone R:R: derive the missing level from a multiplier
+  const derived = (() => {
+    const e = parseFloat(entry);
+    const m = parseFloat(rrMult);
+    if (!e || !m || m <= 0) return null;
+    const s = parseFloat(sl);
+    const p = parseFloat(tp);
+    // SL set, TP empty → derive TP
+    if (s && !p) {
+      const v = deriveTpFromSl(side, e, s, m);
+      return v != null ? { field: "tp", value: v } : null;
+    }
+    // TP set, SL empty → derive SL
+    if (p && !s) {
+      const v = deriveSlFromTp(side, e, p, m);
+      return v != null ? { field: "sl", value: v } : null;
+    }
+    return null;
+  })();
+
+  const applyDerived = () => {
+    if (!derived) return;
+    if (derived.field === "tp") setTp(derived.value.toFixed(2));
+    if (derived.field === "sl") setSl(derived.value.toFixed(2));
+    setRrMult("");
+  };
+
   const onMargin = (v) => {
     setMargin(v);
     if (v && leverage) setNotional((parseFloat(v) * parseFloat(leverage)).toFixed(2));
@@ -78,7 +105,7 @@ export default function App() {
   const reset = () => {
     setEntry(""); setClose(""); setLeverage("10");
     setMargin(""); setNotional("");
-    setSl(""); setTp("");
+    setSl(""); setTp(""); setRrMult("");
     setMakerFee("0.02"); setTakerFee("0.05");
     setFundingRate("0.01"); setFundingPeriods("3");
     setEntryTaker(true); setCloseTaker(true);
@@ -148,6 +175,8 @@ export default function App() {
                 <input type="number" placeholder="price" value={tp} onChange={(e) => setTp(e.target.value)} />
               </div>
             </div>
+
+            {/* Mode 1: live R:R when both set */}
             {livePreview && livePreview.rr != null && (
               <div style={{
                 padding: "8px 10px", marginBottom: 8,
@@ -159,6 +188,32 @@ export default function App() {
                 {t("results.riskReward")}: {fmt(livePreview.rr, 2)} : 1
               </div>
             )}
+
+            {/* Mode 2: standalone R:R — derive missing level */}
+            <div className="field-grid">
+              <div className="field">
+                <label>{t("fields.rrMultiplier")}</label>
+                <input type="number" step="0.1" placeholder="e.g. 2.5" value={rrMult} onChange={(e) => setRrMult(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>&nbsp;</label>
+                <button
+                  className="btn"
+                  onClick={applyDerived}
+                  disabled={!derived}
+                  style={{
+                    width: "100%", padding: "7px",
+                    background: derived ? "rgba(0,153,255,0.15)" : "transparent",
+                    color: derived ? "var(--accent2)" : "var(--muted)",
+                    border: `1px solid ${derived ? "rgba(0,153,255,0.35)" : "var(--border)"}`,
+                    cursor: derived ? "pointer" : "not-allowed"
+                  }}>
+                  {derived
+                    ? `Set ${derived.field.toUpperCase()} → ${fmt(derived.value, 2)}`
+                    : "Enter SL or TP + R:R"}
+                </button>
+              </div>
+            </div>
 
             <button className="btn btn-calc" onClick={calculate}>{t("actions.calculate")}</button>
             {error && <div className="error-box">⚠ {error}</div>}
