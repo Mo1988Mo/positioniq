@@ -35,3 +35,6 @@ jobs:
 
       - name: Run break-even tests
         run: node tests/breakeven.test.js
+
+      - name: Run legs tests
+        run: node tests/legs.test.js
