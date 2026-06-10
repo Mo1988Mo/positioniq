@@ -7,6 +7,7 @@ import { solveRisk } from "./logic/risk.js";
 import { calcTargetClose } from "./logic/money.js";
 import { calcBreakEven } from "./logic/breakeven.js";
 import { listItems, saveItem, deleteItem, getItem } from "./logic/storage.js";
+import { blendLegs } from "./logic/legs.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -82,10 +83,16 @@ export default function App() {
   const [drafts, setDrafts] = useState(() => listItems("drafts"));
   const [selectedDraft, setSelectedDraft] = useState("");
 
-  // Preset state
   const [presetName, setPresetName] = useState("");
   const [presets, setPresets] = useState(() => listItems("presets"));
   const [selectedPreset, setSelectedPreset] = useState("");
+
+  // Legs state
+  const [legs, setLegs] = useState([]);
+  const [legType, setLegType] = useState("add");
+  const [legPrice, setLegPrice] = useState("");
+  const [legQty, setLegQty] = useState("");
+  const [legReduceOnly, setLegReduceOnly] = useState(false);
 
   const livePreview = (() => {
     const e = parseFloat(entry);
@@ -125,15 +132,34 @@ export default function App() {
   };
 
   const mmResult = calcTargetClose({
-    side,
-    entry: parseFloat(mmEntry),
-    notional: parseFloat(mmNotional),
-    margin: parseFloat(mmMargin),
-    targetRoi: parseFloat(mmTargetRoi),
+    side, entry: parseFloat(mmEntry), notional: parseFloat(mmNotional),
+    margin: parseFloat(mmMargin), targetRoi: parseFloat(mmTargetRoi),
   });
 
   const resetMoney = () => {
     setMmEntry(""); setMmNotional(""); setMmMargin(""); setMmTargetRoi("");
+  };
+
+  // ── Legs ──
+  const blend = blendLegs(legs, side);
+
+  const addLeg = () => {
+    const p = parseFloat(legPrice);
+    const q = parseFloat(legQty);
+    if (!(p > 0) || !(q > 0)) return;
+    setLegs([...legs, { type: legType, price: p, qty: q, reduceOnly: legReduceOnly }]);
+    setLegPrice(""); setLegQty(""); setLegReduceOnly(false);
+  };
+
+  const removeLeg = (i) => setLegs(legs.filter((_, idx) => idx !== i));
+  const clearLegs = () => setLegs([]);
+
+  const applyBlend = () => {
+    if (!(blend.netQty > 0) || !(blend.avgEntry > 0)) return;
+    setSide(blend.side);
+    setEntry(blend.avgEntry.toFixed(2));
+    setNotional((blend.avgEntry * blend.netQty).toFixed(2));
+    setMargin("");
   };
 
   // ── Drafts ──
@@ -141,12 +167,10 @@ export default function App() {
     side, type, entry, close, leverage, margin, notional, sl, tp,
     makerFee, takerFee, entryTaker, closeTaker, fundingRate, fundingPeriods,
   });
-
   const saveDraft = () => {
     const saved = saveItem("drafts", draftName, currentConfig());
     if (saved) { setDrafts(listItems("drafts")); setDraftName(""); }
   };
-
   const loadDraft = (id) => {
     setSelectedDraft(id);
     if (!id) return;
@@ -162,24 +186,21 @@ export default function App() {
     setFundingRate(d.fundingRate ?? "0.01"); setFundingPeriods(d.fundingPeriods ?? "3");
     setResult(null); setError("");
   };
-
   const removeDraft = () => {
     if (!selectedDraft) return;
     deleteItem("drafts", selectedDraft);
     setDrafts(listItems("drafts")); setSelectedDraft("");
   };
 
-  // ── Presets (rule sets only) ──
+  // ── Presets ──
   const currentPreset = () => ({
     makerFee, takerFee, entryTaker, closeTaker, fundingRate, fundingPeriods,
     rrMult, rsRiskPct, mmTargetRoi,
   });
-
   const savePreset = () => {
     const saved = saveItem("presets", presetName, currentPreset());
     if (saved) { setPresets(listItems("presets")); setPresetName(""); }
   };
-
   const loadPreset = (id) => {
     setSelectedPreset(id);
     if (!id) return;
@@ -189,11 +210,8 @@ export default function App() {
     setMakerFee(d.makerFee ?? "0.02"); setTakerFee(d.takerFee ?? "0.05");
     setEntryTaker(d.entryTaker ?? true); setCloseTaker(d.closeTaker ?? true);
     setFundingRate(d.fundingRate ?? "0.01"); setFundingPeriods(d.fundingPeriods ?? "3");
-    setRrMult(d.rrMult ?? "");
-    setRsRiskPct(d.rsRiskPct ?? "");
-    setMmTargetRoi(d.mmTargetRoi ?? "");
+    setRrMult(d.rrMult ?? ""); setRsRiskPct(d.rsRiskPct ?? ""); setMmTargetRoi(d.mmTargetRoi ?? "");
   };
-
   const removePreset = () => {
     if (!selectedPreset) return;
     deleteItem("presets", selectedPreset);
@@ -261,38 +279,20 @@ export default function App() {
           <div className="panel-body">
 
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-              <input
-                type="text" placeholder="Name this setup…" value={draftName}
+              <input type="text" placeholder="Name this setup…" value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                style={{
-                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
-                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
-                  padding: "6px 8px", borderRadius: 3
-                }}
-              />
+                style={{ flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12, padding: "6px 8px", borderRadius: 3 }} />
               <button className="btn" onClick={saveDraft} disabled={!draftName.trim()}
-                style={{
-                  background: draftName.trim() ? "rgba(0,212,170,0.15)" : "transparent",
-                  color: draftName.trim() ? "var(--accent)" : "var(--muted)",
-                  border: `1px solid ${draftName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`,
-                  cursor: draftName.trim() ? "pointer" : "not-allowed"
-                }}>
+                style={{ background: draftName.trim() ? "rgba(0,212,170,0.15)" : "transparent", color: draftName.trim() ? "var(--accent)" : "var(--muted)", border: `1px solid ${draftName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`, cursor: draftName.trim() ? "pointer" : "not-allowed" }}>
                 {t("actions.save")}
               </button>
               <select value={selectedDraft} onChange={(e) => loadDraft(e.target.value)}
-                style={{
-                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
-                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
-                  padding: "6px 8px", borderRadius: 3
-                }}>
+                style={{ flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12, padding: "6px 8px", borderRadius: 3 }}>
                 <option value="">Load saved…</option>
                 {drafts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
               {selectedDraft && (
-                <button className="btn" onClick={removeDraft}
-                  style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>
-                  ✕
-                </button>
+                <button className="btn" onClick={removeDraft} style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>✕</button>
               )}
             </div>
 
@@ -349,13 +349,7 @@ export default function App() {
             </div>
 
             {livePreview && livePreview.rr != null && (
-              <div style={{
-                padding: "8px 10px", marginBottom: 8,
-                background: "rgba(0,212,170,0.06)",
-                border: "1px solid rgba(0,212,170,0.25)",
-                borderRadius: 3, fontSize: 11, color: "var(--accent)",
-                letterSpacing: "1px", textAlign: "center"
-              }}>
+              <div style={{ padding: "8px 10px", marginBottom: 8, background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)", borderRadius: 3, fontSize: 11, color: "var(--accent)", letterSpacing: "1px", textAlign: "center" }}>
                 {t("results.riskReward")}: {fmt(livePreview.rr, 2)} : 1
               </div>
             )}
@@ -368,13 +362,7 @@ export default function App() {
               <div className="field">
                 <label>&nbsp;</label>
                 <button className="btn" onClick={applyDerived} disabled={!derived}
-                  style={{
-                    width: "100%", padding: "7px",
-                    background: derived ? "rgba(0,153,255,0.15)" : "transparent",
-                    color: derived ? "var(--accent2)" : "var(--muted)",
-                    border: `1px solid ${derived ? "rgba(0,153,255,0.35)" : "var(--border)"}`,
-                    cursor: derived ? "pointer" : "not-allowed"
-                  }}>
+                  style={{ width: "100%", padding: "7px", background: derived ? "rgba(0,153,255,0.15)" : "transparent", color: derived ? "var(--accent2)" : "var(--muted)", border: `1px solid ${derived ? "rgba(0,153,255,0.35)" : "var(--border)"}`, cursor: derived ? "pointer" : "not-allowed" }}>
                   {derived ? `Set ${derived.field.toUpperCase()} → ${fmt(derived.value, 2)}` : "Enter SL or TP + R:R"}
                 </button>
               </div>
@@ -391,38 +379,20 @@ export default function App() {
           <div className="panel-body">
 
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-              <input
-                type="text" placeholder="Name this preset…" value={presetName}
+              <input type="text" placeholder="Name this preset…" value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                style={{
-                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
-                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
-                  padding: "6px 8px", borderRadius: 3
-                }}
-              />
+                style={{ flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12, padding: "6px 8px", borderRadius: 3 }} />
               <button className="btn" onClick={savePreset} disabled={!presetName.trim()}
-                style={{
-                  background: presetName.trim() ? "rgba(0,212,170,0.15)" : "transparent",
-                  color: presetName.trim() ? "var(--accent)" : "var(--muted)",
-                  border: `1px solid ${presetName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`,
-                  cursor: presetName.trim() ? "pointer" : "not-allowed"
-                }}>
+                style={{ background: presetName.trim() ? "rgba(0,212,170,0.15)" : "transparent", color: presetName.trim() ? "var(--accent)" : "var(--muted)", border: `1px solid ${presetName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`, cursor: presetName.trim() ? "pointer" : "not-allowed" }}>
                 {t("actions.save")}
               </button>
               <select value={selectedPreset} onChange={(e) => loadPreset(e.target.value)}
-                style={{
-                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
-                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
-                  padding: "6px 8px", borderRadius: 3
-                }}>
+                style={{ flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12, padding: "6px 8px", borderRadius: 3 }}>
                 <option value="">Load preset…</option>
                 {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               {selectedPreset && (
-                <button className="btn" onClick={removePreset}
-                  style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>
-                  ✕
-                </button>
+                <button className="btn" onClick={removePreset} style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>✕</button>
               )}
             </div>
 
@@ -469,6 +439,83 @@ export default function App() {
           </div>
         </div>
 
+        {/* POSITION LEGS */}
+        <div className="panel output-panel">
+          <div className="panel-title">Position Legs — Blended Entry</div>
+          <div className="panel-body">
+            <p style={{ fontSize: 10, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+              Build a position from multiple entries (add) or partial closes (reduce). Reduce-only closes at zero; a regular reduce beyond your size flips to the opposite side. Starts on the {side.toUpperCase()} side selected above.
+            </p>
+
+            <div className="field-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr auto auto", alignItems: "end", gap: 8 }}>
+              <div className="field">
+                <label>Type</label>
+                <select value={legType} onChange={(e) => setLegType(e.target.value)}>
+                  <option value="add">Add</option>
+                  <option value="reduce">Reduce</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Price</label>
+                <input type="number" placeholder="0.00" value={legPrice} onChange={(e) => setLegPrice(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Qty</label>
+                <input type="number" placeholder="0.00" value={legQty} onChange={(e) => setLegQty(e.target.value)} />
+              </div>
+              <div className="field" style={{ minWidth: 90 }}>
+                <label>Reduce-only</label>
+                <button className="btn" onClick={() => setLegReduceOnly(!legReduceOnly)} disabled={legType !== "reduce"}
+                  style={{ width: "100%", padding: "7px", background: legReduceOnly && legType === "reduce" ? "rgba(245,200,66,0.15)" : "transparent", color: legType !== "reduce" ? "var(--muted)" : (legReduceOnly ? "var(--yellow)" : "var(--label)"), border: `1px solid ${legReduceOnly && legType === "reduce" ? "rgba(245,200,66,0.35)" : "var(--border)"}`, cursor: legType === "reduce" ? "pointer" : "not-allowed" }}>
+                  {legReduceOnly ? "ON" : "OFF"}
+                </button>
+              </div>
+              <div className="field">
+                <label>&nbsp;</label>
+                <button className="btn" onClick={addLeg}
+                  style={{ padding: "7px 14px", background: "rgba(0,212,170,0.15)", color: "var(--accent)", border: "1px solid rgba(0,212,170,0.35)" }}>
+                  + Leg
+                </button>
+              </div>
+            </div>
+
+            {legs.length > 0 && (
+              <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 3, overflow: "hidden" }}>
+                {legs.map((leg, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderBottom: i < legs.length - 1 ? "1px solid var(--border)" : "none", fontSize: 11, background: i % 2 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                    <span style={{ color: leg.type === "add" ? "var(--accent)" : "var(--red)", textTransform: "uppercase", letterSpacing: "1px", width: 60 }}>
+                      {leg.type}
+                    </span>
+                    <span style={{ color: "var(--text)" }}>{fmt(leg.qty, 4)} @ {fmt(leg.price, 2)}</span>
+                    {leg.type === "reduce" && leg.reduceOnly && <span style={{ color: "var(--yellow)", fontSize: 9 }}>reduce-only</span>}
+                    <button onClick={() => removeLeg(i)} style={{ marginLeft: "auto", background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {blend.netQty > 0 ? (
+              <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)", borderRadius: 3, fontSize: 12, color: "var(--accent)", letterSpacing: "0.5px", textAlign: "center" }}>
+                Net: <strong style={{ textTransform: "uppercase" }}>{blend.side}</strong> {fmt(blend.netQty, 4)} @ avg {fmt(blend.avgEntry, 2)}
+                {blend.flipped && <span style={{ color: "var(--yellow)" }}>  · flipped</span>}
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn" onClick={applyBlend} style={{ background: "var(--accent)", color: "#000", fontWeight: 700, padding: "6px 14px" }}>
+                    ↑ Apply to Position
+                  </button>
+                </div>
+              </div>
+            ) : legs.length > 0 ? (
+              <div style={{ marginTop: 12, padding: "10px", textAlign: "center", color: "var(--muted)", fontSize: 11 }}>
+                Position closed (net qty 0){blend.closed ? "" : ""}
+              </div>
+            ) : null}
+
+            {legs.length > 0 && (
+              <button className="btn btn-reset" onClick={clearLegs} style={{ marginTop: 10 }}>↺ Clear Legs</button>
+            )}
+          </div>
+        </div>
+
         {/* RISK SOLVER */}
         <div className="panel output-panel">
           <div className="panel-title">Risk Management Solver</div>
@@ -485,11 +532,7 @@ export default function App() {
               <SolverField label="Notional (USDT)" value={rsNotional} setValue={setRsNotional} solvedVal={solved ? solved.notional : null} decimals={2} />
             </div>
             {solved && solved.riskAmount != null && (
-              <div style={{
-                marginTop: 12, padding: "8px 10px",
-                background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)",
-                borderRadius: 3, fontSize: 11, color: "var(--accent)", letterSpacing: "1px", textAlign: "center"
-              }}>
+              <div style={{ marginTop: 12, padding: "8px 10px", background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)", borderRadius: 3, fontSize: 11, color: "var(--accent)", letterSpacing: "1px", textAlign: "center" }}>
                 Max risk at SL: ${fmt(solved.riskAmount, 2)}
                 {solved.qty != null && <> · Position qty: {fmt(solved.qty, 4)}</>}
               </div>
@@ -524,11 +567,7 @@ export default function App() {
               </div>
             </div>
             {mmResult && (
-              <div style={{
-                marginTop: 12, padding: "10px 12px",
-                background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)",
-                borderRadius: 3, fontSize: 12, color: "var(--accent)", letterSpacing: "0.5px", textAlign: "center"
-              }}>
+              <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)", borderRadius: 3, fontSize: 12, color: "var(--accent)", letterSpacing: "0.5px", textAlign: "center" }}>
                 Target close price: <strong>{fmt(mmResult.closePrice, 2)}</strong>
                 {"  ·  "}target PnL: {sign(mmResult.targetPnl)}${fmt(mmResult.targetPnl, 2)}
                 {"  ·  "}move: {sign(mmResult.priceMove)}{fmt((mmResult.priceMove / parseFloat(mmEntry)) * 100, 2)}%
