@@ -6,6 +6,7 @@ import { calcRR, deriveTpFromSl, deriveSlFromTp } from "./logic/rr.js";
 import { solveRisk } from "./logic/risk.js";
 import { calcTargetClose } from "./logic/money.js";
 import { calcBreakEven } from "./logic/breakeven.js";
+import { listItems, saveItem, deleteItem, getItem } from "./logic/storage.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -77,6 +78,11 @@ export default function App() {
   const [mmMargin, setMmMargin] = useState("");
   const [mmTargetRoi, setMmTargetRoi] = useState("");
 
+  // Save/load state
+  const [draftName, setDraftName] = useState("");
+  const [drafts, setDrafts] = useState(() => listItems("drafts"));
+  const [selectedDraft, setSelectedDraft] = useState("");
+
   const livePreview = (() => {
     const e = parseFloat(entry);
     const s = parseFloat(sl);
@@ -124,6 +130,43 @@ export default function App() {
 
   const resetMoney = () => {
     setMmEntry(""); setMmNotional(""); setMmMargin(""); setMmTargetRoi("");
+  };
+
+  // ── Save / Load draft ──
+  const currentConfig = () => ({
+    side, type, entry, close, leverage, margin, notional, sl, tp,
+    makerFee, takerFee, entryTaker, closeTaker, fundingRate, fundingPeriods,
+  });
+
+  const saveDraft = () => {
+    const saved = saveItem("drafts", draftName, currentConfig());
+    if (saved) {
+      setDrafts(listItems("drafts"));
+      setDraftName("");
+    }
+  };
+
+  const loadDraft = (id) => {
+    setSelectedDraft(id);
+    if (!id) return;
+    const item = getItem("drafts", id);
+    if (!item || !item.data) return;
+    const d = item.data;
+    setSide(d.side ?? "long"); setType(d.type ?? "linear");
+    setEntry(d.entry ?? ""); setClose(d.close ?? "");
+    setLeverage(d.leverage ?? "10"); setMargin(d.margin ?? "");
+    setNotional(d.notional ?? ""); setSl(d.sl ?? ""); setTp(d.tp ?? "");
+    setMakerFee(d.makerFee ?? "0.02"); setTakerFee(d.takerFee ?? "0.05");
+    setEntryTaker(d.entryTaker ?? true); setCloseTaker(d.closeTaker ?? true);
+    setFundingRate(d.fundingRate ?? "0.01"); setFundingPeriods(d.fundingPeriods ?? "3");
+    setResult(null); setError("");
+  };
+
+  const removeDraft = () => {
+    if (!selectedDraft) return;
+    deleteItem("drafts", selectedDraft);
+    setDrafts(listItems("drafts"));
+    setSelectedDraft("");
   };
 
   const onMargin = (v) => {
@@ -185,6 +228,44 @@ export default function App() {
         <div className="panel">
           <div className="panel-title">Position Setup</div>
           <div className="panel-body">
+
+            {/* SAVE / LOAD BAR */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+              <input
+                type="text" placeholder="Name this setup…" value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                style={{
+                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
+                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
+                  padding: "6px 8px", borderRadius: 3
+                }}
+              />
+              <button className="btn" onClick={saveDraft} disabled={!draftName.trim()}
+                style={{
+                  background: draftName.trim() ? "rgba(0,212,170,0.15)" : "transparent",
+                  color: draftName.trim() ? "var(--accent)" : "var(--muted)",
+                  border: `1px solid ${draftName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`,
+                  cursor: draftName.trim() ? "pointer" : "not-allowed"
+                }}>
+                {t("actions.save")}
+              </button>
+              <select value={selectedDraft} onChange={(e) => loadDraft(e.target.value)}
+                style={{
+                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
+                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
+                  padding: "6px 8px", borderRadius: 3
+                }}>
+                <option value="">Load saved…</option>
+                {drafts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {selectedDraft && (
+                <button className="btn" onClick={removeDraft}
+                  style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>
+                  ✕
+                </button>
+              )}
+            </div>
+
             <div className="side-toggle">
               <button className={`side-btn long${side === "long" ? " active" : ""}`} onClick={() => setSide("long")}>▲ {t("side.long")}</button>
               <button className={`side-btn short${side === "short" ? " active" : ""}`} onClick={() => setSide("short")}>▼ {t("side.short")}</button>
