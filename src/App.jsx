@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t } from "./i18n/index.js";
 import { calcRawPnl, calcRoi, calcClosingPnl, calcPositionPnl } from "./logic/pnl.js";
 import { calcTradingFees, calcFunding } from "./logic/fees.js";
+import { calcRR } from "./logic/rr.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -18,6 +19,8 @@ export default function App() {
   const [leverage, setLeverage] = useState("10");
   const [margin, setMargin] = useState("");
   const [notional, setNotional] = useState("");
+  const [sl, setSl] = useState("");
+  const [tp, setTp] = useState("");
   const [makerFee, setMakerFee] = useState("0.02");
   const [takerFee, setTakerFee] = useState("0.05");
   const [entryTaker, setEntryTaker] = useState(true);
@@ -26,6 +29,16 @@ export default function App() {
   const [fundingPeriods, setFundingPeriods] = useState("3");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+
+  // Live R:R preview (Mode 1) — updates as you type, no button needed
+  const livePreview = (() => {
+    const e = parseFloat(entry);
+    const s = parseFloat(sl);
+    const p = parseFloat(tp);
+    if (!e || (!s && !p)) return null;
+    const rr = (s && p) ? calcRR(side, e, s, p) : null;
+    return { rr };
+  })();
 
   // Auto-sync margin → notional
   const onMargin = (v) => {
@@ -65,6 +78,7 @@ export default function App() {
   const reset = () => {
     setEntry(""); setClose(""); setLeverage("10");
     setMargin(""); setNotional("");
+    setSl(""); setTp("");
     setMakerFee("0.02"); setTakerFee("0.05");
     setFundingRate("0.01"); setFundingPeriods("3");
     setEntryTaker(true); setCloseTaker(true);
@@ -122,6 +136,29 @@ export default function App() {
                 <input readOnly value={entry && notional ? fmt(parseFloat(notional) / parseFloat(entry), 4) : ""} placeholder="—" />
               </div>
             </div>
+
+            <div className="section-divider">Risk Levels</div>
+            <div className="field-grid">
+              <div className="field">
+                <label>{t("fields.stopLoss")}</label>
+                <input type="number" placeholder="price" value={sl} onChange={(e) => setSl(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>{t("fields.takeProfit")}</label>
+                <input type="number" placeholder="price" value={tp} onChange={(e) => setTp(e.target.value)} />
+              </div>
+            </div>
+            {livePreview && livePreview.rr != null && (
+              <div style={{
+                padding: "8px 10px", marginBottom: 8,
+                background: "rgba(0,212,170,0.06)",
+                border: "1px solid rgba(0,212,170,0.25)",
+                borderRadius: 3, fontSize: 11, color: "var(--accent)",
+                letterSpacing: "1px", textAlign: "center"
+              }}>
+                {t("results.riskReward")}: {fmt(livePreview.rr, 2)} : 1
+              </div>
+            )}
 
             <button className="btn btn-calc" onClick={calculate}>{t("actions.calculate")}</button>
             {error && <div className="error-box">⚠ {error}</div>}
