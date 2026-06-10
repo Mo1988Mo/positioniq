@@ -12,6 +12,37 @@ const fmt = (n, d = 2) => {
 const sign = (n) => (n >= 0 ? "+" : "");
 const cls = (n) => (n == null ? "" : n >= 0 ? "pos" : "neg");
 
+function SolverField({ label, value, setValue, solvedVal, decimals = 2, suffix = "" }) {
+  const isFaded = (value === "" || value == null) && solvedVal != null && isFinite(solvedVal);
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div style={{ position: "relative" }}>
+        <input
+          type="number"
+          value={value}
+          placeholder={isFaded ? `${fmt(solvedVal, decimals)}${suffix}` : "—"}
+          onChange={(e) => setValue(e.target.value)}
+          style={isFaded ? { borderColor: "rgba(0,153,255,0.3)", color: "var(--muted)" } : {}}
+        />
+        {isFaded && (
+          <button
+            onClick={() => setValue(solvedVal.toFixed(decimals))}
+            title="Confirm this calculated value"
+            style={{
+              position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+              background: "rgba(0,153,255,0.15)", color: "var(--accent2)",
+              border: "1px solid rgba(0,153,255,0.35)", borderRadius: 2,
+              fontSize: 9, padding: "2px 6px", cursor: "pointer", letterSpacing: "0.5px"
+            }}>
+            ✓ use
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [side, setSide] = useState("long");
   const [type, setType] = useState("linear");
@@ -76,9 +107,6 @@ export default function App() {
     notional: rsNotional,
   });
 
-  const faded = (rawInput, solvedVal) =>
-    (rawInput === "" || rawInput == null) && solvedVal != null && isFinite(solvedVal);
-
   const onMargin = (v) => {
     setMargin(v);
     if (v && leverage) setNotional((parseFloat(v) * parseFloat(leverage)).toFixed(2));
@@ -121,37 +149,6 @@ export default function App() {
     setFundingRate("0.01"); setFundingPeriods("3");
     setEntryTaker(true); setCloseTaker(true);
     setResult(null); setError("");
-  };
-
-  const SolverField = ({ label, value, setValue, solvedVal, decimals = 2, suffix = "" }) => {
-    const isFaded = faded(value, solvedVal);
-    return (
-      <div className="field">
-        <label>{label}</label>
-        <div style={{ position: "relative" }}>
-          <input
-            type="number"
-            value={value}
-            placeholder={isFaded ? `${fmt(solvedVal, decimals)}${suffix}` : "—"}
-            onChange={(e) => setValue(e.target.value)}
-            style={isFaded ? { borderColor: "rgba(0,153,255,0.3)", color: "var(--muted)" } : {}}
-          />
-          {isFaded && (
-            <button
-              onClick={() => setValue(solvedVal.toFixed(decimals))}
-              title="Confirm this calculated value"
-              style={{
-                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
-                background: "rgba(0,153,255,0.15)", color: "var(--accent2)",
-                border: "1px solid rgba(0,153,255,0.35)", borderRadius: 2,
-                fontSize: 9, padding: "2px 6px", cursor: "pointer", letterSpacing: "0.5px"
-              }}>
-              ✓ use
-            </button>
-          )}
-        </div>
-      </div>
-    );
   };
 
   return (
