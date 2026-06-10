@@ -5,6 +5,7 @@ import { calcTradingFees, calcFunding } from "./logic/fees.js";
 import { calcRR, deriveTpFromSl, deriveSlFromTp } from "./logic/rr.js";
 import { solveRisk } from "./logic/risk.js";
 import { calcTargetClose } from "./logic/money.js";
+import { calcBreakEven } from "./logic/breakeven.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -71,7 +72,6 @@ export default function App() {
   const [rsMargin, setRsMargin] = useState("");
   const [rsNotional, setRsNotional] = useState("");
 
-  // Money management state
   const [mmEntry, setMmEntry] = useState("");
   const [mmNotional, setMmNotional] = useState("");
   const [mmMargin, setMmMargin] = useState("");
@@ -114,7 +114,6 @@ export default function App() {
     setRsLeverage(""); setRsMargin(""); setRsNotional("");
   };
 
-  // Money management result
   const mmResult = calcTargetClose({
     side,
     entry: parseFloat(mmEntry),
@@ -157,8 +156,12 @@ export default function App() {
     const positionPnl = calcPositionPnl(closingPnl, funding, 0);
     const roi = calcRoi(closingPnl, m);
     const priceMove = ((parseFloat(close) - parseFloat(entry)) / parseFloat(entry)) * 100;
+    const be = calcBreakEven({
+      side, entry: parseFloat(entry), notional: nom,
+      entryFee: fees.entryFee, closeFee: fees.exitFee, funding,
+    });
 
-    setResult({ rawPnl, fees, funding, closingPnl, positionPnl, roi, priceMove, margin: m, notional: nom });
+    setResult({ rawPnl, fees, funding, closingPnl, positionPnl, roi, priceMove, margin: m, notional: nom, be });
   };
 
   const reset = () => {
@@ -394,6 +397,7 @@ export default function App() {
             {!result ? (
               <div className="empty-state">Fill in your position and hit {t("actions.calculate")}</div>
             ) : (
+              <>
               <div className="results-grid">
                 <div className="result-cell">
                   <span className="rc-label">{t("results.closingPnl")}</span>
@@ -435,7 +439,20 @@ export default function App() {
                   <span className={`rc-val ${result.funding > 0 ? "neg" : "pos"}`}>{result.funding > 0 ? "−" : "+"}${fmt(Math.abs(result.funding))}</span>
                   <span className="rc-sub">{result.funding > 0 ? "paid" : "received"}</span>
                 </div>
+                {result.be && (
+                  <div className="result-cell">
+                    <span className="rc-label">{t("results.breakEven")}</span>
+                    <span className="rc-val" style={{ color: "var(--yellow)" }}>{fmt(result.be.breakEvenPrice, 2)}</span>
+                    <span className="rc-sub">approx · {fmt(result.be.priceMove, 2)} move</span>
+                  </div>
+                )}
               </div>
+              {result.be && result.be.approximate && (
+                <p style={{ fontSize: 9, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
+                  {t("notes.breakEvenApprox")}
+                </p>
+              )}
+              </>
             )}
           </div>
         </div>
