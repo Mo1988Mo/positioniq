@@ -3,6 +3,7 @@ import { t } from "./i18n/index.js";
 import { calcRawPnl, calcRoi, calcClosingPnl, calcPositionPnl } from "./logic/pnl.js";
 import { calcTradingFees, calcFunding } from "./logic/fees.js";
 import { calcRR, deriveTpFromSl, deriveSlFromTp } from "./logic/rr.js";
+import { solveRisk } from "./logic/risk.js";
 
 const fmt = (n, d = 2) => {
   if (n == null || isNaN(n)) return "—";
@@ -31,7 +32,13 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
-  // Live R:R preview (Mode 1) — both SL & TP set → show ratio
+  const [rsEntry, setRsEntry] = useState("");
+  const [rsSl, setRsSl] = useState("");
+  const [rsRiskPct, setRsRiskPct] = useState("");
+  const [rsLeverage, setRsLeverage] = useState("");
+  const [rsMargin, setRsMargin] = useState("");
+  const [rsNotional, setRsNotional] = useState("");
+
   const livePreview = (() => {
     const e = parseFloat(entry);
     const s = parseFloat(sl);
@@ -41,23 +48,14 @@ export default function App() {
     return { rr };
   })();
 
-  // Mode 2 — Standalone R:R: derive the missing level from a multiplier
   const derived = (() => {
     const e = parseFloat(entry);
     const m = parseFloat(rrMult);
     if (!e || !m || m <= 0) return null;
     const s = parseFloat(sl);
     const p = parseFloat(tp);
-    // SL set, TP empty → derive TP
-    if (s && !p) {
-      const v = deriveTpFromSl(side, e, s, m);
-      return v != null ? { field: "tp", value: v } : null;
-    }
-    // TP set, SL empty → derive SL
-    if (p && !s) {
-      const v = deriveSlFromTp(side, e, p, m);
-      return v != null ? { field: "sl", value: v } : null;
-    }
+    if (s && !p) { const v = deriveTpFromSl(side, e, s, m); return v != null ? { field: "tp", value: v } : null; }
+    if (p && !s) { const v = deriveSlFromTp(side, e, p, m); return v != null ? { field: "sl", value: v } : null; }
     return null;
   })();
 
@@ -67,6 +65,19 @@ export default function App() {
     if (derived.field === "sl") setSl(derived.value.toFixed(2));
     setRrMult("");
   };
+
+  const solved = solveRisk({
+    side,
+    entry: rsEntry,
+    sl: rsSl,
+    riskPct: rsRiskPct,
+    leverage: rsLeverage,
+    margin: rsMargin,
+    notional: rsNotional,
+  });
+
+  const faded = (rawInput, solvedVal) =>
+    (rawInput === "" || rawInput == null) && solvedVal != null && isFinite(solvedVal);
 
   const onMargin = (v) => {
     setMargin(v);
@@ -112,6 +123,37 @@ export default function App() {
     setResult(null); setError("");
   };
 
+  const SolverField = ({ label, value, setValue, solvedVal, decimals = 2, suffix = "" }) => {
+    const isFaded = faded(value, solvedVal);
+    return (
+      <div className="field">
+        <label>{label}</label>
+        <div style={{ position: "relative" }}>
+          <input
+            type="number"
+            value={value}
+            placeholder={isFaded ? `${fmt(solvedVal, decimals)}${suffix}` : "—"}
+            onChange={(e) => setValue(e.target.value)}
+            style={isFaded ? { borderColor: "rgba(0,153,255,0.3)", color: "var(--muted)" } : {}}
+          />
+          {isFaded && (
+            <button
+              onClick={() => setValue(solvedVal.toFixed(decimals))}
+              title="Confirm this calculated value"
+              style={{
+                position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)",
+                background: "rgba(0,153,255,0.15)", color: "var(--accent2)",
+                border: "1px solid rgba(0,153,255,0.35)", borderRadius: 2,
+                fontSize: 9, padding: "2px 6px", cursor: "pointer", letterSpacing: "0.5px"
+              }}>
+              ✓ use
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app">
       <div className="header">
@@ -120,7 +162,6 @@ export default function App() {
       </div>
 
       <div className="layout">
-        {/* INPUT PANEL */}
         <div className="panel">
           <div className="panel-title">Position Setup</div>
           <div className="panel-body">
@@ -176,7 +217,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Mode 1: live R:R when both set */}
             {livePreview && livePreview.rr != null && (
               <div style={{
                 padding: "8px 10px", marginBottom: 8,
@@ -189,7 +229,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Mode 2: standalone R:R — derive missing level */}
             <div className="field-grid">
               <div className="field">
                 <label>{t("fields.rrMultiplier")}</label>
@@ -197,10 +236,7 @@ export default function App() {
               </div>
               <div className="field">
                 <label>&nbsp;</label>
-                <button
-                  className="btn"
-                  onClick={applyDerived}
-                  disabled={!derived}
+                <button className="btn" onClick={applyDerived} disabled={!derived}
                   style={{
                     width: "100%", padding: "7px",
                     background: derived ? "rgba(0,153,255,0.15)" : "transparent",
@@ -208,9 +244,7 @@ export default function App() {
                     border: `1px solid ${derived ? "rgba(0,153,255,0.35)" : "var(--border)"}`,
                     cursor: derived ? "pointer" : "not-allowed"
                   }}>
-                  {derived
-                    ? `Set ${derived.field.toUpperCase()} → ${fmt(derived.value, 2)}`
-                    : "Enter SL or TP + R:R"}
+                  {derived ? `Set ${derived.field.toUpperCase()} → ${fmt(derived.value, 2)}` : "Enter SL or TP + R:R"}
                 </button>
               </div>
             </div>
@@ -221,7 +255,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* FEES PANEL */}
         <div className="panel">
           <div className="panel-title">Fees &amp; Funding</div>
           <div className="panel-body">
@@ -268,7 +301,33 @@ export default function App() {
           </div>
         </div>
 
-        {/* OUTPUT PANEL */}
+        <div className="panel output-panel">
+          <div className="panel-title">Risk Management Solver</div>
+          <div className="panel-body">
+            <p style={{ fontSize: 10, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
+              Fill any fields — the rest are calculated and shown faded. Click "✓ use" to lock a calculated value in. (Uses the {side.toUpperCase()} side selected above.)
+            </p>
+            <div className="field-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+              <SolverField label="Entry Price" value={rsEntry} setValue={setRsEntry} solvedVal={solved ? solved.entry : null} decimals={2} />
+              <SolverField label="Stop Loss" value={rsSl} setValue={setRsSl} solvedVal={solved ? solved.sl : null} decimals={2} />
+              <SolverField label="Risk %" value={rsRiskPct} setValue={setRsRiskPct} solvedVal={solved ? solved.riskPct : null} decimals={2} suffix="%" />
+              <SolverField label="Leverage ×" value={rsLeverage} setValue={setRsLeverage} solvedVal={solved ? solved.leverage : null} decimals={2} />
+              <SolverField label="Margin (USDT)" value={rsMargin} setValue={setRsMargin} solvedVal={solved ? solved.margin : null} decimals={2} />
+              <SolverField label="Notional (USDT)" value={rsNotional} setValue={setRsNotional} solvedVal={solved ? solved.notional : null} decimals={2} />
+            </div>
+            {solved && solved.riskAmount != null && (
+              <div style={{
+                marginTop: 12, padding: "8px 10px",
+                background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.25)",
+                borderRadius: 3, fontSize: 11, color: "var(--accent)", letterSpacing: "1px", textAlign: "center"
+              }}>
+                Max risk at SL: ${fmt(solved.riskAmount, 2)}
+                {solved.qty != null && <> · Position qty: {fmt(solved.qty, 4)}</>}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="panel output-panel">
           <div className="panel-title">Position Analysis</div>
           <div className="panel-body">
