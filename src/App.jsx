@@ -78,10 +78,14 @@ export default function App() {
   const [mmMargin, setMmMargin] = useState("");
   const [mmTargetRoi, setMmTargetRoi] = useState("");
 
-  // Save/load state
   const [draftName, setDraftName] = useState("");
   const [drafts, setDrafts] = useState(() => listItems("drafts"));
   const [selectedDraft, setSelectedDraft] = useState("");
+
+  // Preset state
+  const [presetName, setPresetName] = useState("");
+  const [presets, setPresets] = useState(() => listItems("presets"));
+  const [selectedPreset, setSelectedPreset] = useState("");
 
   const livePreview = (() => {
     const e = parseFloat(entry);
@@ -132,7 +136,7 @@ export default function App() {
     setMmEntry(""); setMmNotional(""); setMmMargin(""); setMmTargetRoi("");
   };
 
-  // ── Save / Load draft ──
+  // ── Drafts ──
   const currentConfig = () => ({
     side, type, entry, close, leverage, margin, notional, sl, tp,
     makerFee, takerFee, entryTaker, closeTaker, fundingRate, fundingPeriods,
@@ -140,10 +144,7 @@ export default function App() {
 
   const saveDraft = () => {
     const saved = saveItem("drafts", draftName, currentConfig());
-    if (saved) {
-      setDrafts(listItems("drafts"));
-      setDraftName("");
-    }
+    if (saved) { setDrafts(listItems("drafts")); setDraftName(""); }
   };
 
   const loadDraft = (id) => {
@@ -165,8 +166,38 @@ export default function App() {
   const removeDraft = () => {
     if (!selectedDraft) return;
     deleteItem("drafts", selectedDraft);
-    setDrafts(listItems("drafts"));
-    setSelectedDraft("");
+    setDrafts(listItems("drafts")); setSelectedDraft("");
+  };
+
+  // ── Presets (rule sets only) ──
+  const currentPreset = () => ({
+    makerFee, takerFee, entryTaker, closeTaker, fundingRate, fundingPeriods,
+    rrMult, rsRiskPct, mmTargetRoi,
+  });
+
+  const savePreset = () => {
+    const saved = saveItem("presets", presetName, currentPreset());
+    if (saved) { setPresets(listItems("presets")); setPresetName(""); }
+  };
+
+  const loadPreset = (id) => {
+    setSelectedPreset(id);
+    if (!id) return;
+    const item = getItem("presets", id);
+    if (!item || !item.data) return;
+    const d = item.data;
+    setMakerFee(d.makerFee ?? "0.02"); setTakerFee(d.takerFee ?? "0.05");
+    setEntryTaker(d.entryTaker ?? true); setCloseTaker(d.closeTaker ?? true);
+    setFundingRate(d.fundingRate ?? "0.01"); setFundingPeriods(d.fundingPeriods ?? "3");
+    setRrMult(d.rrMult ?? "");
+    setRsRiskPct(d.rsRiskPct ?? "");
+    setMmTargetRoi(d.mmTargetRoi ?? "");
+  };
+
+  const removePreset = () => {
+    if (!selectedPreset) return;
+    deleteItem("presets", selectedPreset);
+    setPresets(listItems("presets")); setSelectedPreset("");
   };
 
   const onMargin = (v) => {
@@ -229,7 +260,6 @@ export default function App() {
           <div className="panel-title">Position Setup</div>
           <div className="panel-body">
 
-            {/* SAVE / LOAD BAR */}
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
               <input
                 type="text" placeholder="Name this setup…" value={draftName}
@@ -359,6 +389,43 @@ export default function App() {
         <div className="panel">
           <div className="panel-title">Fees &amp; Funding</div>
           <div className="panel-body">
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+              <input
+                type="text" placeholder="Name this preset…" value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                style={{
+                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
+                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
+                  padding: "6px 8px", borderRadius: 3
+                }}
+              />
+              <button className="btn" onClick={savePreset} disabled={!presetName.trim()}
+                style={{
+                  background: presetName.trim() ? "rgba(0,212,170,0.15)" : "transparent",
+                  color: presetName.trim() ? "var(--accent)" : "var(--muted)",
+                  border: `1px solid ${presetName.trim() ? "rgba(0,212,170,0.35)" : "var(--border)"}`,
+                  cursor: presetName.trim() ? "pointer" : "not-allowed"
+                }}>
+                {t("actions.save")}
+              </button>
+              <select value={selectedPreset} onChange={(e) => loadPreset(e.target.value)}
+                style={{
+                  flex: "1 1 120px", background: "var(--bg)", border: "1px solid var(--border)",
+                  color: "var(--text)", fontFamily: "var(--mono)", fontSize: 12,
+                  padding: "6px 8px", borderRadius: 3
+                }}>
+                <option value="">Load preset…</option>
+                {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {selectedPreset && (
+                <button className="btn" onClick={removePreset}
+                  style={{ background: "rgba(255,69,96,0.1)", color: "var(--red)", border: "1px solid rgba(255,69,96,0.25)" }}>
+                  ✕
+                </button>
+              )}
+            </div>
+
             <div className="section-divider">Trading Fees</div>
             <div className="field-grid">
               <div className="field">
